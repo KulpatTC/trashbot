@@ -1,13 +1,43 @@
+import os
 import telebot
-from time import sleep
-from telebot import types
+import threading
+from flask import Flask, request
+from waitress import serve
 import sqlite3
-from telebot import apihelper
 
+# Конфигурация
+TOKEN = os.environ.get('BOT_TOKEN')
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')
+PORT = int(os.environ.get('PORT', 10000))
+
+# Инициализация
 bot = telebot.TeleBot('8488238859:AAEu30M-KawUYmB9PVxTwoyGZhLQKWVInlY')
 us = ''
+app = Flask(__name__)
 
 
+# ================= FLASK ROUTES =================
+@app.route('/')
+def home():
+    return "Telegram Bot is running! ✅"
+
+
+@app.route('/health')
+def health():
+    return {"status": "ok", "bot": "running"}, 200
+
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    return '', 403
+
+
+# ================= TELEGRAM BOT HANDLERS =================
 @bot.message_handler(commands=['start'])
 def main(message):
     conn = sqlite3.connect('database.sql')
@@ -249,4 +279,52 @@ def sleep_h(message):
     cur.close()
 
 
-bot.polling(none_stop=True)
+# ================= RUN FUNCTIONS =================
+def run_flask():
+    """Запуск Flask сервера"""
+    print(f"Starting Flask server on port {PORT}...")
+    # Для продакшена используем waitress вместо dev сервера Flask
+    serve(app, host='0.0.0.0', port=PORT)
+
+
+def run_bot_polling():
+    """Запуск бота в режиме polling"""
+    print("Starting bot in polling mode...")
+    bot.remove_webhook()
+    bot.infinity_polling()
+
+
+def run_bot_webhook():
+    """Запуск бота в режиме webhook"""
+    if not WEBHOOK_URL:
+        print("WEBHOOK_URL not set, switching to polling mode")
+        run_bot_polling()
+        return
+
+    print(f"Setting webhook to {WEBHOOK_URL}")
+    bot.remove_webhook()
+    bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
+    print("Webhook set successfully!")
+
+
+# ================= MAIN =================
+if __name__ == '__main__':
+    # Выберите режим работы бота:
+    # 1. WEBHOOK - для продакшена (рекомендуется)
+    # 2. POLLING - для разработки или если нет домена
+
+    mode = os.environ.get('BOT_MODE', 'POLLING').upper()
+
+    if mode == 'WEBHOOK' and WEBHOOK_URL:
+        # Запускаем webhook режим
+        run_bot_webhook()
+        # Flask будет обрабатывать вебхуки через маршрут /webhook
+    else:
+        # Запускаем polling режим в отдельном потоке
+        print("Running in POLLING mode")
+        bot_thread = threading.Thread(target=run_bot_polling)
+        bot_thread.daemon = True
+        bot_thread.start()
+
+    # Всегда запускаем Flask для health checks
+    run_flask()
