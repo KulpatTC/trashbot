@@ -4,6 +4,8 @@ import threading
 from flask import Flask, request
 from waitress import serve
 import sqlite3
+from time import sleep
+from telebot import types
 
 # Конфигурация
 TOKEN = os.environ.get('BOT_TOKEN')
