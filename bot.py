@@ -293,7 +293,7 @@ def run_bot_polling():
     """Запуск бота в режиме polling"""
     print("Starting bot in polling mode...")
     bot.remove_webhook()
-    bot.infinity_polling()
+    bot.polling(none_stop=True)
 
 
 def run_bot_webhook():
